@@ -59,20 +59,17 @@ kane = KanesMethod(ref_frame, q_ind=coordinates, u_ind=speeds, kd_eqs=kindiffs)
 fr, frstar = kane.kanes_equations(particles, forces)
 
 dynamic = coordinates + speeds + [cart_thrust]
-
 dummy_symbols = [sp.Dummy() for i in dynamic]
 dummy_dict = dict(zip(dynamic, dummy_symbols))
 
 # Get the solved kinematical differential equations
 kindiff_dict = kane.kindiffdict()
-
 M = kane.mass_matrix_full.subs(kindiff_dict)
-
 F = kane.forcing_full.subs(kindiff_dict)
 
-parameters = [g, m[0]]
+static_parameters = [g, m[0]]
 parameter_vals = [9.81, 1]
-parameter_dict = dict(zip(parameters, parameter_vals))
+parameter_dict = dict(zip(static_parameters, parameter_vals))
 
 f_dyn = M.inv() * F
 f_dyn = f_dyn.subs(parameter_dict)
