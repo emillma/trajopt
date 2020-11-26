@@ -10,6 +10,7 @@ import sympy as sp
 import numpy as np
 from scipy.integrate import odeint
 import control
+from scipy.optimize import minimize
 from sympy.printing.pycode import NumPyPrinter
 from sympy.physics.mechanics import (
     dynamicsymbols,
@@ -82,20 +83,69 @@ f_dyn_lambda = sp.lambdify(dummy_symbols, f_dyn.subs(dummy_dict))
 n = 11
 timestep = sp.symbols('h')
 timestep = 0.1
-nlp_x = [sp.symbols(f'x_:{n}\,:2')[i:i+2] for i in range(0, n*2, 2)]
-nlp_u = sp.symbols(f'u_:{n}')
-constraints = []
+nlp_x = sp.Matrix(sp.MatrixSymbol('x', n, 2))
+nlp_u = sp.Matrix(sp.MatrixSymbol('u', n, 1))
+collocation_constraints = []
 for i in range(n-1):
-    x_kp0 = sp.Matrix(nlp_x[i])
-    x_kp1 = sp.Matrix(nlp_x[i+1])
+    x_kp0 = nlp_x[i, :].T
+    x_kp1 = nlp_x[i+1, :].T
 
     u_kp0 = nlp_u[i]
     u_kp1 = nlp_u[i+1]
 
     f_kp0 = f_dyn.subs(dict(zip(dynamic, [*x_kp0, u_kp0])))
     f_kp1 = f_dyn.subs(dict(zip(dynamic, [*x_kp1, u_kp1])))
-    constraints.extend([*(
+    collocation_constraints.extend([*(
         timestep * (f_kp0 + f_kp1) / 2. - (x_kp1 - x_kp0))])
 
-args = [nlp_x, nlp_u]
-lam = sp.lambdify(args, constraints)
+path_constraints = []
+d_max = 10
+u_max = 100
+for i in range(n):
+    pos_k = nlp_x[i, 0]
+    u_k = nlp_u[i]
+    path_constraints.append(pos_k + d_max)
+    path_constraints.append(-pos_k + d_max)
+
+    path_constraints.append(u_k + u_max)
+    path_constraints.append(-u_k + u_max)
+
+boundary_constraints = [nlp_x[0, 0],
+                        nlp_x[0, 1], nlp_x[-1, 0] - 1, nlp_x[-1, 1]]
+
+args = [i for i in nlp_x] + [i for i in nlp_u]
+
+constraints = []
+for con in collocation_constraints:
+    fun_lambda = sp.lambdify([args], con)
+    jac_lambda = sp.lambdify([args], sp.Matrix([con]).jacobian(args))
+    constraints.append({'type': 'eq',
+                        'fun': fun_lambda,
+                        'jac': jac_lambda})
+
+for con in path_constraints:
+    fun_lambda = sp.lambdify([args], con)
+    jac_lambda = sp.lambdify([args], sp.Matrix([con]).jacobian(args))
+    constraints.append({'type': 'ineq',
+                        'fun': fun_lambda,
+                        'jac': jac_lambda})
+
+for con in boundary_constraints:
+    fun_lambda = sp.lambdify([args], con)
+    jac_lambda = sp.lambdify([args], sp.Matrix([con]).jacobian(args))
+    constraints.append({'type': 'eq',
+                        'fun': fun_lambda,
+                        'jac': jac_lambda})
+
+lam = sp.lambdify(args, collocation_constraints)
+cost = sum([i**2 for i in nlp_u])
+cost_lam = sp.lambdify([args], cost)
+initial_args = np.zeros(len(args))
+
+
+def cb(a):
+    pass
+
+
+result = minimize(cost_lam, initial_args,
+                  method='SLSQP', constraints=constraints, callback=cb)
