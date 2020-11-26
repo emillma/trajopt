@@ -8,11 +8,20 @@ import sympy as sp
 
 
 system = second_order_system()
+system.set_static_values([9.81, 1])
 
 N = 21
 end_time = 3
-(cost_lamda, initial_args, constraints
- ) = optimization_parameters(system, N, end_time)
+system.set_grid_size(N, end_time)
+system.set_boundary_constraints([0, 0], [1, 0])
+system.set_path_constraints([None, None],
+                            [None, None],
+                            [None],
+                            [None])
+system.set_collocation_constraints()
+system.set_cost_function()
+
+cost_lamda, initial_args, constraints = system.get_optimization_parameters()
 
 
 def cb(a):
@@ -33,15 +42,10 @@ gains = np.vstack((gains, np.zeros_like(gains[-1])))
 
 time = np.linspace(0, end_time, N)
 
-dynamic = system.state + system.gain
-dummy_symbols = [sp.Dummy() for i in dynamic]
-dummy_dict = dict(zip(dynamic, dummy_symbols))
+dummy_symbols = [sp.Dummy() for i in system.dynamic_variables]
+dummy_dict = dict(zip(system.dynamic_variables, dummy_symbols))
 
-static_parameters = system.static_parameters
-static_parameter_vals = [9.81, 1]
-static_parameter_dict = dict(zip(static_parameters, static_parameter_vals))
-
-f_dyn = system.transfer.subs(system.static_parameter_dict)
+f_dyn = system.state_derivative
 f_dyn_lambda = sp.lambdify([dummy_symbols], f_dyn.subs(dummy_dict))
 
 derivatives = [f_dyn_lambda(np.concatenate((states[i], gains[i]))).ravel()
@@ -53,3 +57,4 @@ spline_func = CubicHermiteSpline(time, states, derivatives, axis=0)
 plot_time = np.linspace(0, end_time, 100)
 interpolated = spline_func(plot_time)
 plt.plot(plot_time, interpolated)
+plt.show()

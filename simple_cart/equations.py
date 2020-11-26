@@ -63,4 +63,4 @@ def second_order_system():
     static_parameters = [g, m[0]]
 
     transfer = M.inv() * F
-    return DynamicSystem(state, gain, transfer, static_parameters)
+    return DynamicSystem(state, gain, static_parameters, transfer)
