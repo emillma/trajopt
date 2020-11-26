@@ -19,6 +19,8 @@ from sympy.physics.mechanics import (
     Particle,
     KanesMethod
 )
+from matplotlib import pyplot as plt
+from scipy.interpolate import interp1d, CubicSpline
 # from sympy.printing.pycode import NumPyPrinter, pycode
 coordinates = dynamicsymbols('q:1')  # Generalized coordinates
 speeds = dynamicsymbols('u:1')  # Generalized speeds
@@ -80,38 +82,51 @@ dummy_symbols = [sp.Dummy() for i in dynamic]
 dummy_dict = dict(zip(dynamic, dummy_symbols))
 f_dyn_lambda = sp.lambdify(dummy_symbols, f_dyn.subs(dummy_dict))
 
-n = 11
-timestep = sp.symbols('h')
-timestep = 0.1
+
+n = 21
+end_time = 3
+timestep = end_time/(n-1)
+# timestep = 0.1
 nlp_x = sp.Matrix(sp.MatrixSymbol('x', n, 2))
-nlp_u = sp.Matrix(sp.MatrixSymbol('u', n, 1))
+nlp_u = sp.Matrix(sp.MatrixSymbol('u', n-1, 1))
 collocation_constraints = []
 for i in range(n-1):
     x_kp0 = nlp_x[i, :].T
     x_kp1 = nlp_x[i+1, :].T
 
     u_kp0 = nlp_u[i]
-    u_kp1 = nlp_u[i+1]
 
     f_kp0 = f_dyn.subs(dict(zip(dynamic, [*x_kp0, u_kp0])))
-    f_kp1 = f_dyn.subs(dict(zip(dynamic, [*x_kp1, u_kp1])))
+    f_kp1 = f_dyn.subs(dict(zip(dynamic, [*x_kp1, u_kp0])))
+    x_kphalf = (x_kp0 + x_kp1)/2. + timestep * (f_kp0 - f_kp1) / 8.
+    f_kphalf = f_dyn.subs(dict(zip(dynamic, [*x_kphalf, u_kp0])))
+
+    # collocation_constraints.extend([*(
+    #     timestep * (f_kp0 + f_kp1) / 2. - (x_kp1 - x_kp0))])
     collocation_constraints.extend([*(
-        timestep * (f_kp0 + f_kp1) / 2. - (x_kp1 - x_kp0))])
+        timestep * (f_kp0 + 4*f_kphalf + f_kp1) / 6. - (x_kp1 - x_kp0))])
 
 path_constraints = []
-d_max = 10
-u_max = 100
+d_max = 3
+u_max = 1000
 for i in range(n):
     pos_k = nlp_x[i, 0]
-    u_k = nlp_u[i]
     path_constraints.append(pos_k + d_max)
     path_constraints.append(-pos_k + d_max)
 
+for i in range(n-1):
+    u_k = nlp_u[i]
     path_constraints.append(u_k + u_max)
     path_constraints.append(-u_k + u_max)
 
-boundary_constraints = [nlp_x[0, 0],
-                        nlp_x[0, 1], nlp_x[-1, 0] - 1, nlp_x[-1, 1]]
+init_pos = 0
+init_vel = 0
+final_pos = 1
+final_vel = 0
+boundary_constraints = [nlp_x[0, 0] - init_pos,
+                        nlp_x[0, 1] - init_vel,
+                        nlp_x[-1, 0] - final_pos,
+                        nlp_x[-1, 1] - final_vel]
 
 args = [i for i in nlp_x] + [i for i in nlp_u]
 
@@ -140,7 +155,10 @@ for con in boundary_constraints:
 lam = sp.lambdify(args, collocation_constraints)
 cost = sum([i**2 for i in nlp_u])
 cost_lam = sp.lambdify([args], cost)
-initial_args = np.zeros(len(args))
+initial_states = np.zeros((n, 2))
+initial_states[:, 0] = np.linspace(0, final_pos, n)
+initial_gains = np.zeros(n-1)
+initial_args = np.concatenate((initial_states.ravel(), initial_gains))
 
 
 def cb(a):
@@ -149,3 +167,15 @@ def cb(a):
 
 result = minimize(cost_lam, initial_args,
                   method='SLSQP', constraints=constraints, callback=cb)
+
+x = result.x
+pos = [x[i] for i in range(0, n*2, 2)]
+vel = [x[i] for i in range(1, n*2, 2)]
+gain = [x[i] for i in range(n*2, n*2+n-1)]
+
+time = np.linspace(0, end_time, n)
+f2 = CubicSpline(time, pos, bc_type=((1, vel[0]), (1, vel[-1])))
+f3 = CubicSpline(time, vel, bc_type=((1, gain[0]), (1, gain[-1])))
+
+plot_time = np.linspace(0, end_time, 100)
+plt.plot(plot_time, f2(plot_time))
