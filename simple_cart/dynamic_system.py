@@ -35,7 +35,7 @@ class DynamicSystem():
     def set_grid_size(self, N, end_time):
         self.N = N
         self.end_time = end_time
-        self.timestep = self.end_time / self.N
+        self.timestep = self.end_time / (self.N - 1)
 
         self.state_grid_points = sp.Matrix(
             sp.MatrixSymbol('X', N, self.state_shape))
