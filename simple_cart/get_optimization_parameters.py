@@ -11,8 +11,8 @@ system.set_boundary_constraints([0, 0, 0, 1], [1, 0, end_time, 1])
 system.set_path_constraints([None, None, None, None],
                             [None, None, None, None],
 
-                            [None, 0],
-                            [None, 0])
+                            [None, None],
+                            [None, None])
 system.set_collocation_constraints()
 system.set_cost_function()
 
