@@ -1,23 +1,26 @@
 import sympy as sp
 import numpy as np
+from simpson_integral import get_integral_square
 
 
 class DynamicSystem():
     def __init__(self, state_variables, gain_variables, static_parameters,
                  state_derivative):
 
-        self.state_variables = state_variables
-        self.gain_variables = gain_variables
+        t, time_delta, time_gain = sp.symbols('t, delta, time_gain')
+        self.state_variables = state_variables + [t, time_delta]
 
-        self.dynamic_variables = state_variables + gain_variables
+        self.gain_variables = gain_variables + [time_gain]
 
-        self.state_derivative_all = state_derivative
-        self.state_derivative = state_derivative
+        self.dynamic_variables = self.state_variables + self.gain_variables
+
+        self.state_derivative = sp.Matrix([*(state_derivative),
+                                           time_delta, time_gain])
 
         self.static_parameters = static_parameters
 
-        self.state_shape = len(state_variables)
-        self.gain_shape = len(gain_variables)
+        self.state_shape = len(self.state_variables)
+        self.gain_shape = len(self.gain_variables)
 
     def set_static_values(self, static_values):
         assert len(static_values) == len(self.static_parameters)
@@ -26,9 +29,8 @@ class DynamicSystem():
         self.static_variable_dict = dict(
             zip(self.static_parameters, static_values)
         )
-        self.state_derivative = self.state_derivative_all.subs(
+        self.state_derivative_dyn = self.state_derivative.subs(
             self.static_variable_dict)
-        pass
 
     def set_grid_size(self, N, end_time):
         self.N = N
@@ -39,7 +41,7 @@ class DynamicSystem():
             sp.MatrixSymbol('X', N, self.state_shape))
 
         self.gain_grid_points = sp.Matrix(
-            sp.MatrixSymbol('u', N, self.gain_shape))
+            sp.MatrixSymbol('u', N*2-1, self.gain_shape))
 
         self.optimization_args = (list(self.state_grid_points)
                                   + list(self.gain_grid_points))
@@ -49,15 +51,29 @@ class DynamicSystem():
         self.final_state = final_state
         self.boundary_constraints = []
         for i in range(self.state_shape):
-            self.boundary_constraints.append(self.state_grid_points[0, i]
-                                             - init_state[i])
-            self.boundary_constraints.append(self.state_grid_points[-1, i]
-                                             - final_state[i])
+            if init_state[i] is not None:
+                self.boundary_constraints.append(
+                    self.state_grid_points[0, i] - init_state[i])
+            if final_state[i] is not None:
+                self.boundary_constraints.append(
+                    self.state_grid_points[-1, i] - final_state[i])
 
-        initial_states = np.linspace(init_state, final_state, self.N)
-        initial_gains = np.zeros(self.N)
+        initial_states = np.zeros(self.state_grid_points.shape)
+        for i in range(self.state_shape):
+            if init_state[i] is not None and final_state[i] is not None:
+                initial_states[:, i] = np.linspace(init_state[i],
+                                                   final_state[i], self.N)
+
+            elif init_state[i] is not None:
+                initial_states[:, i] = init_state[i]
+
+            elif final_state[i] is not None:
+                initial_states[:, i] = final_state[i]
+
+        initial_gains = np.zeros(self.gain_grid_points.shape)
+
         self.initial_optimization_args = np.concatenate(
-            (initial_states.ravel(), initial_gains))
+            (initial_states.ravel(), initial_gains.ravel()))
 
     def set_collocation_constraints(self, use_hermite_himpson=True):
         self.collocation_constraints = []
@@ -65,19 +81,19 @@ class DynamicSystem():
             x_kp0 = self.state_grid_points[i, :].T
             x_kp1 = self.state_grid_points[i+1, :].T
 
-            u_kp0 = self.gain_grid_points[i, :]
-            u_kp1 = self.gain_grid_points[i+1, :]
+            u_kp0 = self.gain_grid_points[i*2, :]
+            u_kp1 = self.gain_grid_points[(i+1)*2, :]
+            u_kphalf = self.gain_grid_points[i*2 + 1, :]
 
-            f_kp0 = self.state_derivative.subs(
+            f_kp0 = self.state_derivative_dyn.subs(
                 dict(zip(self.dynamic_variables, [*x_kp0, *u_kp0])))
-            f_kp1 = self.state_derivative.subs(
+            f_kp1 = self.state_derivative_dyn.subs(
                 dict(zip(self.dynamic_variables, [*x_kp1, *u_kp1])))
 
             if use_hermite_himpson:
                 x_kphalf = ((x_kp0 + x_kp1)/2.
                             + self.timestep * (f_kp0 - f_kp1) / 8.)
-                u_kphalf = (u_kp0 + u_kp1) / 2.
-                f_kphalf = self.state_derivative.subs(
+                f_kphalf = self.state_derivative_dyn.subs(
                     dict(zip(self.dynamic_variables, [*x_kphalf, *u_kphalf])))
                 self.collocation_constraints.extend([*(
                     (self.timestep / 6.) * (f_kp0 + 4*f_kphalf + f_kp1)
@@ -112,8 +128,18 @@ class DynamicSystem():
                                                  + gain_max[j])
 
     def set_cost_function(self):
-        cost = sum([i**2 for i in self.gain_grid_points])
+        cost = 0
+        for i in range(self.N-1):
+            u_kp0 = self.gain_grid_points[i*2, :]
+            u_kp1 = self.gain_grid_points[(i+1)*2, :]
+            u_kphalf = self.gain_grid_points[i*2 + 1, :]
+            cost += get_integral_square(
+                1, u_kp0[0], u_kphalf[0], u_kp1[0])
+
+        cost_jacobian = sp.Matrix([cost]).jacobian(self.optimization_args)
         self.cost_function = sp.lambdify([self.optimization_args], cost)
+        self.cost_jacobian_function = sp.lambdify(
+            [self.optimization_args], cost_jacobian)
 
     def get_constraint_functions(self):
 
@@ -146,4 +172,5 @@ class DynamicSystem():
 
     def get_optimization_parameters(self):
         return (self.cost_function, self.initial_optimization_args,
+                self.cost_jacobian_function,
                 self.get_constraint_functions())

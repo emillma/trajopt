@@ -23,8 +23,8 @@ def second_order_system():
     cart_thrust = dynamicsymbols('thrust')
 
     m = sp.symbols('m:1')         # Mass of each bob
-    g, t = sp.symbols('g t')                  # Gravity and time
-
+    g, t = sp.symbols('g t')
+    # Gravity and time
     ref_frame = ReferenceFrame('I')     # Inertial reference frame
     origin = Point('O')                 # Origin point
     origin.set_vel(ref_frame, 0)        # Origin's velocity is zero
