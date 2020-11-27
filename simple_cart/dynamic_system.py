@@ -136,8 +136,8 @@ class DynamicSystem():
             u_kphalf = self.gain_grid_points[i*2 + 1, :]
             cost += get_integral_square(
                 1, u_kp0[0], u_kphalf[0], u_kp1[0])
-            cost += get_integral_square(
-                1, u_kp0[1], u_kphalf[1], u_kp1[1])
+            # cost += get_integral_square(
+            #     1, u_kp0[1], u_kphalf[1], u_kp1[1])
 
         cost_jacobian = sp.Matrix([cost]).jacobian(self.optimization_args)
         self.cost_function = sp.lambdify([self.optimization_args], cost)
