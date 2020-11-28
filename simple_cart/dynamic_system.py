@@ -39,7 +39,7 @@ class DynamicSystem():
             sp.MatrixSymbol('X', N, self.state_shape))
 
         self.gain_grid_points = sp.Matrix(
-            sp.MatrixSymbol('u', N*2-1, self.gain_shape))
+            sp.MatrixSymbol('u', N, self.gain_shape))
 
         self.optimization_args = (list(self.state_grid_points)
                                   + list(self.gain_grid_points))
@@ -79,10 +79,9 @@ class DynamicSystem():
             x_kp0 = self.state_grid_points[i, :].T
             x_kp1 = self.state_grid_points[i+1, :].T
 
-            u_kp0 = self.gain_grid_points[i*2, :]
-            u_kp1 = self.gain_grid_points[(i+1)*2, :]
-            u_kphalf = self.gain_grid_points[i*2 + 1, :]
-
+            u_kp0 = self.gain_grid_points[i, :]
+            u_kp1 = self.gain_grid_points[i+1, :]
+            u_kphalf = (u_kp0 + u_kp1)/2
             f_kp0 = self.state_derivative_dyn.subs(
                 dict(zip(self.dynamic_variables, [*x_kp0, *u_kp0])))
             f_kp1 = self.state_derivative_dyn.subs(
@@ -93,6 +92,7 @@ class DynamicSystem():
                             + (self.timestep / 8.) * (f_kp0 - f_kp1))
                 f_kphalf = self.state_derivative_dyn.subs(
                     dict(zip(self.dynamic_variables, [*x_kphalf, *u_kphalf])))
+
                 self.collocation_constraints.extend([*(
                     (self.timestep / 6.) * (f_kp0 + 4*f_kphalf + f_kp1)
                     - (x_kp1 - x_kp0))])
@@ -117,7 +117,7 @@ class DynamicSystem():
                 if state_max[j] is not None:
                     self.path_constraints.append(-self.state_grid_points[i, j]
                                                  + state_max[j])
-        for i in range(2*self.N - 1):
+        for i in range(self.N):
             for j in range(self.gain_shape):
                 if gain_min[j] is not None:
                     self.path_constraints.append(self.gain_grid_points[i, j]
@@ -129,9 +129,9 @@ class DynamicSystem():
     def set_cost_function(self):
         cost = 0
         for i in range(self.N-1):
-            u_kp0 = self.gain_grid_points[i*2, :]
-            u_kp1 = self.gain_grid_points[(i+1)*2, :]
-            u_kphalf = self.gain_grid_points[i*2 + 1, :]
+            u_kp0 = self.gain_grid_points[i, :]
+            u_kp1 = self.gain_grid_points[i+1, :]
+            u_kphalf = (u_kp0 + u_kp1)/2.
             cost += get_integral_square(
                 1, u_kp0[0], u_kphalf[0], u_kp1[0])
             # cost += get_integral_square(
@@ -173,13 +173,14 @@ class DynamicSystem():
     def augment_state_grid_point(self, state_grid_points,
                                  gain_grid_points):
         augmented_state_grid = []
+        augmented_gain_grid = []
         for i in range(self.N-1):
             x_kp0 = state_grid_points[i, :].T
             x_kp1 = state_grid_points[i+1, :].T
 
-            u_kp0 = gain_grid_points[i*2, :]
-            u_kp1 = gain_grid_points[(i+1)*2, :]
-            u_kphalf = gain_grid_points[i*2 + 1, :]
+            u_kp0 = gain_grid_points[i, :]
+            u_kp1 = gain_grid_points[i+1, :]
+            u_kphalf = (u_kp0 + u_kp1)/2.
 
             f_kp0 = self.state_derivative_dyn.subs(
                 dict(zip(self.dynamic_variables, [*x_kp0, *u_kp0])))
@@ -191,8 +192,13 @@ class DynamicSystem():
 
             augmented_state_grid.append(sp.Matrix(x_kp0))
             augmented_state_grid.append(x_kphalf)
+            augmented_gain_grid.append(u_kp0)
+            augmented_gain_grid.append(u_kphalf)
+
         augmented_state_grid.append(x_kp1)
-        return np.array([list(i) for i in augmented_state_grid])
+        augmented_gain_grid.append(u_kp1)
+        return (np.array([list(i) for i in augmented_state_grid]),
+                np.array([list(i) for i in augmented_gain_grid]))
 
     def get_optimization_parameters(self):
         return (self.cost_function, self.initial_optimization_args,
