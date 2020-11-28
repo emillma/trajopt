@@ -15,6 +15,8 @@ class DynamicSystem():
 
         self.state_derivative = sp.Matrix(state_derivative)
 
+        self.total_time = sp.symbols('T')
+
         self.static_parameters = static_parameters
 
         self.state_shape = len(self.state_variables)
@@ -30,10 +32,10 @@ class DynamicSystem():
         self.state_derivative_dyn = self.state_derivative.subs(
             self.static_variable_dict)
 
-    def set_grid_size(self, N, end_time):
+    def set_grid_size(self, N, _):
         self.N = N
-        self.end_time = end_time
-        self.timestep = self.end_time / (self.N - 1)
+        self.end_time = 5
+        self.timestep = self.total_time / (self.N - 1)
 
         self.state_grid_points = sp.Matrix(
             sp.MatrixSymbol('X', N, self.state_shape))
@@ -133,7 +135,7 @@ class DynamicSystem():
             u_kp1 = self.gain_grid_points[i+1, :]
             u_kphalf = (u_kp0 + u_kp1)/2.
             cost += get_integral_square(
-                1, u_kp0[0], u_kphalf[0], u_kp1[0])
+                self.total_time, u_kp0[0], u_kphalf[0], u_kp1[0])
             # cost += get_integral_square(
             #     1, u_kp0[1], u_kphalf[1], u_kp1[1])
 
