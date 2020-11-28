@@ -19,3 +19,6 @@ def get_integral_square(*args):
     args = [h, u0, uhalf, u1]
     """
     return cost.subs(zip([h, u0, uhalf, u1], args))
+
+
+cost

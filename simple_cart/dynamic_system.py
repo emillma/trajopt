@@ -7,15 +7,13 @@ class DynamicSystem():
     def __init__(self, state_variables, gain_variables, static_parameters,
                  state_derivative):
 
-        t, time_delta, time_gain = sp.symbols('t, delta, time_gain')
-        self.state_variables = state_variables + [t, time_delta]
+        self.state_variables = state_variables
 
-        self.gain_variables = gain_variables + [time_gain]
+        self.gain_variables = gain_variables
 
         self.dynamic_variables = self.state_variables + self.gain_variables
 
-        self.state_derivative = sp.Matrix([*(state_derivative),
-                                           time_delta, time_gain])
+        self.state_derivative = sp.Matrix(state_derivative)
 
         self.static_parameters = static_parameters
 
