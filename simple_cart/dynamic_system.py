@@ -44,7 +44,8 @@ class DynamicSystem():
             sp.MatrixSymbol('u', N, self.gain_shape))
 
         self.optimization_args = (list(self.state_grid_points)
-                                  + list(self.gain_grid_points))
+                                  + list(self.gain_grid_points)
+                                  + [self.total_time])
 
     def set_boundary_constraints(self, init_state, final_state):
         self.init_state = init_state
@@ -72,8 +73,11 @@ class DynamicSystem():
 
         initial_gains = np.zeros(self.gain_grid_points.shape)
 
+        initial_total_time = 1
         self.initial_optimization_args = np.concatenate(
-            (initial_states.ravel(), initial_gains.ravel()))
+            (initial_states.ravel(),
+             initial_gains.ravel(),
+             np.array([initial_total_time])))
 
     def set_collocation_constraints(self, use_hermite_himpson=True):
         self.collocation_constraints = []
@@ -97,11 +101,6 @@ class DynamicSystem():
 
                 self.collocation_constraints.extend([*(
                     (self.timestep / 6.) * (f_kp0 + 4*f_kphalf + f_kp1)
-                    - (x_kp1 - x_kp0))])
-
-            else:
-                self.collocation_constraints.extend([*(
-                    (self.timestep / 2.) * (f_kp0 + f_kp1)
                     - (x_kp1 - x_kp0))])
 
     def set_path_constraints(self, state_min, state_max, gain_min, gain_max):
@@ -128,6 +127,8 @@ class DynamicSystem():
                     self.path_constraints.append(-self.gain_grid_points[i, j]
                                                  + gain_max[j])
 
+        self.path_constraints.append(self.total_time)
+
     def set_cost_function(self):
         cost = 0
         for i in range(self.N-1):
@@ -138,9 +139,10 @@ class DynamicSystem():
                 self.total_time, u_kp0[0], u_kphalf[0], u_kp1[0])
             # cost += get_integral_square(
             #     1, u_kp0[1], u_kphalf[1], u_kp1[1])
+        cost = self.end_time
+        self.cost_function = sp.lambdify([self.optimization_args], cost)
 
         cost_jacobian = sp.Matrix([cost]).jacobian(self.optimization_args)
-        self.cost_function = sp.lambdify([self.optimization_args], cost)
         self.cost_jacobian_function = sp.lambdify(
             [self.optimization_args], cost_jacobian)
 
@@ -172,35 +174,40 @@ class DynamicSystem():
 
         return tuple(constraints_functions)
 
-    def augment_state_grid_point(self, state_grid_points,
-                                 gain_grid_points):
+    def augment_state_grid_point(self, final_args):
         augmented_state_grid = []
         augmented_gain_grid = []
         for i in range(self.N-1):
-            x_kp0 = state_grid_points[i, :].T
-            x_kp1 = state_grid_points[i+1, :].T
+            x_kp0 = self.state_grid_points[i, :].T
+            x_kp1 = self.state_grid_points[i+1, :].T
 
-            u_kp0 = gain_grid_points[i, :]
-            u_kp1 = gain_grid_points[i+1, :]
+            u_kp0 = self.gain_grid_points[i, :]
+            u_kp1 = self.gain_grid_points[i+1, :]
             u_kphalf = (u_kp0 + u_kp1)/2.
+            f_kp0 = self.state_derivative_dyn
 
-            f_kp0 = self.state_derivative_dyn.subs(
-                dict(zip(self.dynamic_variables, [*x_kp0, *u_kp0])))
-            f_kp1 = self.state_derivative_dyn.subs(
-                dict(zip(self.dynamic_variables, [*x_kp1, *u_kp1])))
+            f_kp1 = self.state_derivative_dyn
 
             x_kphalf = (sp.Matrix(x_kp0 + x_kp1)/2.
                         + (self.timestep / 8.) * (f_kp0 - f_kp1))
 
-            augmented_state_grid.append(sp.Matrix(x_kp0))
+            augmented_state_grid.append(x_kp0)
             augmented_state_grid.append(x_kphalf)
             augmented_gain_grid.append(u_kp0)
             augmented_gain_grid.append(u_kphalf)
 
         augmented_state_grid.append(x_kp1)
         augmented_gain_grid.append(u_kp1)
-        return (np.array([list(i) for i in augmented_state_grid]),
-                np.array([list(i) for i in augmented_gain_grid]))
+
+        for i in range(len(augmented_state_grid)):
+            augmented_state_grid[i] = augmented_state_grid[i].subs(
+                dict(zip(self.optimization_args, final_args)))
+        for i in range(len(augmented_gain_grid)):
+            augmented_gain_grid[i] = augmented_gain_grid[i].subs(
+                dict(zip(self.optimization_args, final_args)))
+
+        return (np.array([list(i) for i in augmented_state_grid]).astype(float),
+                np.array([list(i) for i in augmented_gain_grid]).astype(float))
 
     def get_optimization_parameters(self):
         return (self.cost_function, self.initial_optimization_args,

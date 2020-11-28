@@ -26,11 +26,11 @@ result = minimize(cost_lamda, initial_args, jac=cost_jacobian_lambda,
                   options={'maxiter': 1000})
 
 states = result.x[:N*state_shape].reshape(-1, state_shape)
-gains = result.x[N*state_shape:].reshape(-1, gain_shape)
+gains = result.x[N*state_shape:-1].reshape(-1, gain_shape)
 states_augmented, gains_augmented = system.augment_state_grid_point(
-    states, gains)
+    result.x)
 # fikse dette til å løse u = B.inv()*(x_dot_final - A*x_final)
-
+end_time = result.x[-1]
 time = np.linspace(0, end_time, N*2-1)
 
 dummy_symbols = [sp.Dummy() for i in system.dynamic_variables]
