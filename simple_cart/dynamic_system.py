@@ -34,7 +34,6 @@ class DynamicSystem():
 
     def set_grid_size(self, N, _):
         self.N = N
-        self.end_time = 5
         self.timestep = self.total_time / (self.N - 1)
 
         self.state_grid_points = sp.Matrix(
@@ -127,7 +126,8 @@ class DynamicSystem():
                     self.path_constraints.append(-self.gain_grid_points[i, j]
                                                  + gain_max[j])
 
-        self.path_constraints.append(self.total_time)
+        self.path_constraints.append(self.total_time-100)
+        self.path_constraints.append(100-self.total_time)
 
     def set_cost_function(self):
         cost = 0
@@ -136,10 +136,10 @@ class DynamicSystem():
             u_kp1 = self.gain_grid_points[i+1, :]
             u_kphalf = (u_kp0 + u_kp1)/2.
             cost += get_integral_square(
-                self.total_time, u_kp0[0], u_kphalf[0], u_kp1[0])
+                self.timestep, u_kp0[0], u_kphalf[0], u_kp1[0])
             # cost += get_integral_square(
             #     1, u_kp0[1], u_kphalf[1], u_kp1[1])
-        cost = self.end_time
+        # cost += self.total_time
         self.cost_function = sp.lambdify([self.optimization_args], cost)
 
         cost_jacobian = sp.Matrix([cost]).jacobian(self.optimization_args)
